@@ -25,6 +25,11 @@ const ICON_PATHS = {
   chevron: '<path d="m6 9 6 6 6-6"/>',
   star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  back: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+  graph: '<circle cx="12" cy="19" r="2.5"/><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M6 7.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7.5M12 12v4.5"/>',
+  cloud: '<path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 2 3.5 3.5 0 0 1 0 7z"/>',
+  tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
   eyeOff: '<path d="M3 3l18 18M10.6 5.1A9.7 9.7 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-2.8 3.6M6.6 6.6C3.9 8.4 2.5 12 2.5 12S6 19 12 19a9 9 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
 };
 const icon = (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
@@ -157,6 +162,7 @@ function rowHtml(p) {
     <div class="col-todo">${todo}</div>
     <div class="col-actions">
       <button class="btn primary sm" data-action="open" title="Open in ${esc(editorName())} (Enter)">${icon('code')}<span>Open</span></button>
+      <button class="icon-btn" data-action="graph" ${g && !g.error ? 'title="Branch graph (B)"' : 'disabled title="Not a git repo"'}>${icon('graph')}</button>
       <button class="icon-btn" data-action="term" title="Open terminal here (T)">${icon('terminal')}</button>
       <button class="icon-btn" data-action="folder" title="Show in file manager (F)">${icon('folder')}</button>
       <button class="icon-btn" data-action="web" ${web ? `title="${esc(web)}"` : 'disabled title="No remote"'}>${icon('external')}</button>
@@ -192,6 +198,7 @@ function detailsHtml(p) {
     <dl class="meta">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
     ${todos}
     <div class="detail-actions">
+      ${g && !g.error ? `<button class="btn sm" data-action="graph">${icon('graph')}Branch graph</button>` : ''}
       <button class="btn sm" data-action="rescan">${icon('refresh')}Rescan this project</button>
       <button class="btn sm" data-action="hide">${icon('eyeOff')}Hide from list</button>
     </div>
@@ -293,6 +300,7 @@ async function act(action, p, el) {
         toast(`Opening ${t.file}:${t.line}`);
         break;
       }
+      case 'graph': if (p.git && !p.git.error) openGraph(p); break;
       case 'term': await invoke('open_terminal', { path: p.path }); break;
       case 'folder': await invoke('open_folder', { path: p.path }); break;
       case 'web': { const u = webUrl(p.git?.remoteUrl); if (u) await invoke('open_url', { url: u }); break; }
@@ -399,7 +407,7 @@ $('#settings-btn').addEventListener('click', () => openSettings());
 
 /* ---------- keyboard ---------- */
 document.addEventListener('keydown', (e) => {
-  if ($('#settings').open) return;
+  if ($('#settings').open || graphOpen()) return;
   const k = e.key;
   const inSearch = document.activeElement === search;
   const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName) && !inSearch;
@@ -419,7 +427,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (inSearch || !p) return;
-  const keyActions = { t: 'term', f: 'folder', p: 'pin', o: 'web', ' ': 'expand', ArrowRight: 'expand', ArrowLeft: 'expand' };
+  const keyActions = { b: 'graph', t: 'term', f: 'folder', p: 'pin', o: 'web', ' ': 'expand', ArrowRight: 'expand', ArrowLeft: 'expand' };
   const action = keyActions[k.length === 1 ? k.toLowerCase() : k];
   if (!action) return;
   if (k === 'ArrowRight' && state.expanded.has(p.path)) return;
@@ -535,6 +543,51 @@ $('#settings-form').addEventListener('submit', async (e) => {
 })();
 
 /* ---------- demo data when running outside Tauri ---------- */
+function demoGraph(now) {
+  const L = (name, current = false) => ({ name, kind: 'local', current });
+  const R = (name) => ({ name, kind: 'remote', current: false });
+  const T = (name) => ({ name, kind: 'tag', current: false });
+  // Newest first, children before parents.
+  const spec = [
+    ['m9', ['m8', 'f3'], [L('main', true), R('origin/main')], 'Merge branch feature/export'],
+    ['x2', ['x1'], [L('experiment/wasm')], 'Try compiling the core to wasm'],
+    ['f3', ['f2'], [L('feature/export'), R('origin/feature/export')], 'Add parquet writer'],
+    ['m8', ['m7'], [], 'Fix list scrolling on small windows'],
+    ['f2', ['f1'], [], 'Export dialog'],
+    ['x1', ['m6'], [], 'Spike: wasm build'],
+    ['m7', ['m6', 'h1'], [T('v0.3.0')], 'Merge pull request #12 from fix/ci'],
+    ['f1', ['m6'], [], 'Start export feature'],
+    ['h1', ['m5'], [R('origin/fix/ci')], 'Cache cargo registry in CI'],
+    ['m6', ['m5'], [], 'Bump dependencies'],
+    ['m5', ['m4'], [], 'Settings dialog'],
+    ['m4', ['m3'], [T('v0.2.0')], 'Release 0.2.0'],
+    ['m3', ['m2'], [L('old/prototype')], 'TODO scanner'],
+    ['m2', ['m1'], [], 'Git status per project'],
+    ['m1', [], [], 'Initial commit'],
+  ];
+  const hash = (id) => (id + 'deadbeefcafe').padEnd(40, '0');
+  const commits = spec.map(([id, parents, refs, subject], i) => ({
+    hash: hash(id), parents: parents.map(hash), refs, subject,
+    author: i % 3 ? 'dev' : 'collaborator', timestamp: now - (i * 7 + 2) * 3600,
+  }));
+  const B = (name, id, o = {}) => ({ name, remote: false, hash: hash(id), upstream: null, ahead: 0, behind: 0, gone: false, current: false,
+    timestamp: commits.find((c) => c.hash === hash(id)).timestamp, subject: spec.find((s) => s[0] === id)[3], ...o });
+  return {
+    commits,
+    head: hash('m9'),
+    truncated: false,
+    branches: [
+      B('main', 'm9', { current: true, upstream: 'origin/main', ahead: 1 }),
+      B('feature/export', 'f3', { upstream: 'origin/feature/export' }),
+      B('experiment/wasm', 'x2'),
+      B('old/prototype', 'm3', { upstream: 'origin/old/prototype', gone: true }),
+      B('origin/main', 'm8', { remote: true }),
+      B('origin/feature/export', 'f3', { remote: true }),
+      B('origin/fix/ci', 'h1', { remote: true }),
+    ],
+  };
+}
+
 function demoInvoke(cmd, args) {
   const now = Date.now() / 1000;
   const commit = (subject, author, hoursAgo) => ({ hash: Math.random().toString(16).slice(2, 9), subject, author, timestamp: now - hoursAgo * 3600 });
@@ -564,6 +617,7 @@ function demoInvoke(cmd, args) {
     case 'save_config': demo.config = structuredClone(args.config); return Promise.resolve();
     case 'check_editor': return Promise.resolve(args.editor === 'code' ? 'C:\\…\\Microsoft VS Code\\bin\\code.cmd' : null);
     case 'scan_project': return Promise.resolve(structuredClone(demo.projects.find((p) => p.path === args.path)));
+    case 'git_graph': return new Promise((r) => setTimeout(() => r(demoGraph(now)), 150));
     default: return Promise.reject(`Demo mode: "${cmd}" only works in the desktop app.`);
   }
 }

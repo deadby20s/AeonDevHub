@@ -28,7 +28,7 @@ pub struct Commit {
     pub timestamp: i64,
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C")
         .arg(dir)

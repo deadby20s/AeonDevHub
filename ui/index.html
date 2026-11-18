@@ -52,7 +52,7 @@
 
   <footer class="statusbar">
     <span id="status"></span>
-    <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>T</kbd> terminal · <kbd>F</kbd> folder · <kbd>Space</kbd> details</span>
+    <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>B</kbd> branches · <kbd>T</kbd> terminal · <kbd>F</kbd> folder · <kbd>Space</kbd> details</span>
   </footer>
 
   <dialog id="settings">
@@ -99,7 +99,36 @@
     </form>
   </dialog>
 
+  <section id="graph-view" class="overlay" hidden aria-label="Branch graph">
+    <header class="gv-head">
+      <button class="icon-btn" id="gv-close" title="Back to projects (Esc)"><span data-icon="back"></span></button>
+      <div class="gv-title">
+        <h2 id="gv-title"></h2>
+        <span class="faint ellipsis" id="gv-path"></span>
+      </div>
+      <span class="faint gv-meta" id="gv-meta"></span>
+      <div class="top-actions">
+        <button class="btn" id="gv-reload" title="Reload (Ctrl+R)"><span data-icon="refresh"></span><span>Reload</span></button>
+        <button class="icon-btn" id="gv-term" title="Open terminal here"><span data-icon="terminal"></span></button>
+        <button class="btn primary" id="gv-open" title="Open in editor"><span data-icon="code"></span><span>Open</span></button>
+      </div>
+    </header>
+    <div class="gv-body">
+      <aside class="gv-side" id="gv-side"></aside>
+      <div class="gv-main">
+        <div class="gv-scroll" id="gv-scroll">
+          <div class="gv-canvas" id="gv-canvas">
+            <div class="gv-rows" id="gv-rows"></div>
+            <svg class="gv-svg" id="gv-svg" aria-hidden="true"></svg>
+          </div>
+        </div>
+        <footer class="gv-foot" id="gv-foot"></footer>
+      </div>
+    </div>
+  </section>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="main.js"></script>
+  <script src="graph.js"></script>
 </body>
 </html>

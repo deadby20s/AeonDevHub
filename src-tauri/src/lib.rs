@@ -1,5 +1,6 @@
 mod config;
 mod git;
+mod graph;
 mod launch;
 mod scan;
 mod todos;
@@ -105,6 +106,15 @@ fn open_url(url: String) -> Result<(), String> {
     launch::open_url(&url)
 }
 
+/// Commit graph across all branches, newest first.
+#[tauri::command]
+async fn git_graph(path: String, limit: Option<usize>) -> Result<graph::Graph, String> {
+    let limit = limit.unwrap_or(400).clamp(1, 20_000);
+    tauri::async_runtime::spawn_blocking(move || graph::graph(project_dir(&path)?, limit))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Where an editor command resolves to, if anywhere.
 #[tauri::command]
 fn check_editor(editor: String) -> Option<String> {
@@ -138,6 +148,7 @@ pub fn run() {
             open_folder,
             open_url,
             check_editor,
+            git_graph,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aeon Dev Hub");

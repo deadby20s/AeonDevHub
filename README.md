@@ -7,6 +7,7 @@ A small Tauri 2 desktop app that lists all your local projects with git status, 
 - **Projects**: every git repo or folder with a project file (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `*.sln`, `src-tauri/`, …) under your project folders. Subfolders of a found project are not listed separately.
 - **Git**: branch, ahead/behind upstream, staged/modified/untracked/conflicted counts, last commit (subject, author, age), and a link to the remote on the web.
 - **TODOs**: `TODO`, `FIXME`, `HACK` and `XXX` comments in source files. It respects `.gitignore` and skips dependency/build folders and binaries. Click one to open that file at that line.
+- **Branch graph**: a full-window view of a repo's history across all branches, drawn as lanes with merges, tags and remote branches. A sidebar lists local and remote branches with ahead/behind counts and deleted upstreams; click one to jump to its latest commit. It loads the latest 400 commits, and you can load older ones.
 - **Actions**: open in editor, open a terminal there (Windows Terminal, or PowerShell if it isn't installed), show the folder in Explorer, pin to top, hide.
 
 ## Keyboard
@@ -18,6 +19,7 @@ A small Tauri 2 desktop app that lists all your local projects with git status, 
 | `Enter` / double-click | Open in editor |
 | `T` / `F` / `O` | Terminal / folder / remote on the web |
 | `Space` | Show details and TODOs |
+| `B` | Branch graph (in the graph: `↑` `↓` move, `→` first parent, `Shift+→` merged branch, `Esc` back) |
 | `P` | Pin |
 | `Ctrl+R` / `F5` | Rescan |
 | `Ctrl+,` | Settings |

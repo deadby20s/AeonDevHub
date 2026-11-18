@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aeon Dev Hub</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="1" y="1" width="22" height="22" rx="6" fill="var(--accent)"/>
+        <rect x="6" y="6" width="5" height="5" rx="1.3" fill="var(--accent-fg)"/>
+        <rect x="13" y="6" width="5" height="5" rx="1.3" fill="var(--accent-fg)" opacity=".5"/>
+        <rect x="6" y="13" width="5" height="5" rx="1.3" fill="var(--accent-fg)" opacity=".5"/>
+        <rect x="13" y="13" width="5" height="5" rx="1.3" fill="var(--accent-fg)" opacity=".5"/>
+      </svg>
+      <span>Dev Hub</span>
+    </div>
+    <label class="search">
+      <span data-icon="search"></span>
+      <input id="search" type="search" placeholder="Search projects, branches, commits…" autocomplete="off" spellcheck="false">
+      <kbd>/</kbd>
+    </label>
+    <div class="top-actions">
+      <button id="refresh" class="btn" title="Rescan all projects (Ctrl+R)"><span data-icon="refresh"></span><span>Rescan</span></button>
+      <button id="settings-btn" class="icon-btn" title="Settings (Ctrl+,)"><span data-icon="sliders"></span></button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="chips" id="filters" role="tablist">
+      <button class="chip" data-filter="all">All <b></b></button>
+      <button class="chip" data-filter="dirty">Uncommitted <b></b></button>
+      <button class="chip" data-filter="sync">Unpushed / behind <b></b></button>
+      <button class="chip" data-filter="todos">Has TODOs <b></b></button>
+      <button class="chip" data-filter="nogit">No git <b></b></button>
+    </div>
+    <label class="sort">Sort
+      <select id="sort">
+        <option value="recent">Last activity</option>
+        <option value="name">Name</option>
+        <option value="changes">Uncommitted changes</option>
+        <option value="todos">Most TODOs</option>
+      </select>
+    </label>
+  </div>
+  <div id="progress" class="progress"><div></div></div>
+
+  <main id="list" class="list" tabindex="-1"></main>
+
+  <footer class="statusbar">
+    <span id="status"></span>
+    <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>T</kbd> terminal · <kbd>F</kbd> folder · <kbd>Space</kbd> details</span>
+  </footer>
+
+  <dialog id="settings">
+    <form method="dialog" id="settings-form">
+      <header class="dlg-head">
+        <h2>Settings</h2>
+        <button type="button" class="icon-btn" data-close title="Close"><span data-icon="x"></span></button>
+      </header>
+      <div class="dlg-body">
+        <section>
+          <h3>Project folders</h3>
+          <p class="help">Folders that contain your projects. Any subfolder that is a git repo or has a project file (Cargo.toml, package.json, pyproject.toml…) shows up as a project.</p>
+          <ul id="roots" class="path-list"></ul>
+          <div class="add-row">
+            <input id="root-input" type="text" placeholder="Paste a folder path…" spellcheck="false">
+            <button type="button" class="btn" id="root-add">Add</button>
+            <button type="button" class="btn" id="root-browse"><span data-icon="folder"></span>Browse…</button>
+          </div>
+        </section>
+        <section class="grid2">
+          <div>
+            <h3>Editor</h3>
+            <select id="editor-preset"></select>
+            <input id="editor-custom" type="text" placeholder="Command or full path to the editor" spellcheck="false">
+            <p class="help" id="editor-check"></p>
+          </div>
+          <div>
+            <h3>Scanning</h3>
+            <label class="field">Folder depth
+              <input id="depth" type="number" min="1" max="6" step="1">
+            </label>
+            <label class="check"><input id="scan-todos" type="checkbox"> Find TODO, FIXME, HACK and XXX comments</label>
+          </div>
+        </section>
+        <section id="hidden-section">
+          <h3>Hidden projects</h3>
+          <ul id="hidden" class="path-list"></ul>
+        </section>
+      </div>
+      <footer class="dlg-foot">
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary" id="settings-save">Save &amp; rescan</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="main.js"></script>
+</body>
+</html>

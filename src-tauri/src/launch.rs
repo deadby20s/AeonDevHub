@@ -158,6 +158,7 @@ pub fn open_terminal(dir: &Path) -> Result<(), String> {
 }
 
 /// Quotes one argument for PowerShell: bare if it's plainly safe, else in single quotes.
+#[cfg(windows)]
 fn ps_quote(arg: &str) -> String {
     let safe = !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || "_./:=@+-\\".contains(c));
     if safe { arg.to_string() } else { format!("'{}'", arg.replace('\'', "''")) }

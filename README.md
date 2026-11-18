@@ -2,6 +2,17 @@
 
 A small Tauri 2 desktop app that lists all your local projects with git status, last commit and TODOs, and opens any of them in your editor with one click.
 
+## Install
+
+Download the latest build from [Releases](https://github.com/deadby20s/AeonDevHub/releases/latest). You need git on PATH; the GitHub CLI (`gh`) is optional, for PRs and CI.
+
+- **Windows 10/11**: run `Aeon-Dev-Hub_<version>_x64-setup.exe`. It isn't code-signed yet, so SmartScreen may warn you: click **More info → Run anyway**.
+- **Debian / Ubuntu**: `sudo apt install ./Aeon-Dev-Hub_<version>_amd64.deb`
+- **Fedora / RHEL / openSUSE**: `sudo dnf install ./Aeon-Dev-Hub-<version>-1.x86_64.rpm`
+- **Any other distro**: `chmod +x Aeon-Dev-Hub_<version>_amd64.AppImage` and run it.
+
+Linux builds need Ubuntu 22.04 or newer (or an equally recent distro). The tray icon needs a desktop with tray support (KDE, Cinnamon, XFCE; on GNOME, the AppIndicator extension). The global shortcut works on X11; on Wayland, most desktops don't let apps register one.
+
 ## What it shows
 
 - **Projects**: every git repo or folder with a project file (`Cargo.toml`, `package.json`, `pyproject.toml`, `go.mod`, `*.sln`, `src-tauri/`, …) under your project folders. Subfolders of a found project are not listed separately.
@@ -61,6 +72,8 @@ cargo test -- --ignored --nocapture   # smoke-scan this machine's default folder
 ```
 
 Opening `ui/index.html` through any static server (for example `python -m http.server -d ui`) runs the UI with demo data.
+
+Linux packages are built by the [Linux build](.github/workflows/linux.yml) workflow on Ubuntu 22.04. It runs automatically when a release is published and attaches the `.deb`, `.rpm` and `.AppImage` to it; you can also run it by hand from the Actions tab for any branch or tag. To build on Linux yourself, install [Tauri's Linux dependencies](https://v2.tauri.app/start/prerequisites/#linux) and run `cargo tauri build --bundles deb,rpm,appimage` in `src-tauri`.
 
 ## License
 

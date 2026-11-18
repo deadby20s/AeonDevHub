@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,6 +19,18 @@ pub struct Config {
     pub hidden: Vec<String>,
     /// Project paths pinned to the top.
     pub pinned: Vec<String>,
+    /// Free-text note per project path.
+    pub notes: BTreeMap<String, String>,
+    /// When each project was last opened from Dev Hub (unix seconds).
+    pub recent: BTreeMap<String, i64>,
+    /// Global shortcut that shows/hides the window; empty disables it.
+    pub hotkey: String,
+    /// Closing the window hides it to the tray instead of quitting.
+    pub close_to_tray: bool,
+    /// Rescan a project when its files or git state change.
+    pub auto_refresh: bool,
+    /// Show open PRs and CI status from GitHub (needs the `gh` CLI).
+    pub github: bool,
 }
 
 impl Default for Config {
@@ -29,6 +42,28 @@ impl Default for Config {
             scan_todos: true,
             hidden: Vec::new(),
             pinned: Vec::new(),
+            notes: BTreeMap::new(),
+            recent: BTreeMap::new(),
+            hotkey: "Ctrl+Alt+Space".into(),
+            close_to_tray: true,
+            auto_refresh: true,
+            github: true,
+        }
+    }
+}
+
+const RECENT_MAX: usize = 300;
+
+impl Config {
+    /// Remember that a project was just opened; keeps the newest entries only.
+    pub fn touch_recent(&mut self, path: &str) {
+        self.recent.insert(path.to_string(), crate::now());
+        if self.recent.len() > RECENT_MAX {
+            let mut by_age: Vec<(String, i64)> = self.recent.iter().map(|(k, v)| (k.clone(), *v)).collect();
+            by_age.sort_by_key(|(_, t)| *t);
+            for (k, _) in by_age.into_iter().take(self.recent.len() - RECENT_MAX) {
+                self.recent.remove(&k);
+            }
         }
     }
 }

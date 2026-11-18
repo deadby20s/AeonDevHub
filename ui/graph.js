@@ -287,11 +287,12 @@ gvEl('gv-foot').addEventListener('click', async (e) => {
 gvEl('gv-close').addEventListener('click', closeGraph);
 gvEl('gv-reload').addEventListener('click', () => gv.project && openGraph(gv.project, gv.limit));
 gvEl('gv-open').addEventListener('click', () => gv.project && act('open', gv.project));
+gvEl('gv-cleanup').addEventListener('click', () => gv.project && openCleanup(gv.project));
 gvEl('gv-term').addEventListener('click', () => gv.project && act('term', gv.project));
 
 document.addEventListener('keydown', (e) => {
   // defaultPrevented: the list's handler already used this key (e.g. the B that opened the graph).
-  if (!graphOpen() || e.defaultPrevented) return;
+  if (!graphOpen() || e.defaultPrevented || document.querySelector('dialog[open]')) return;
   const k = e.key;
   const mod = e.ctrlKey || e.metaKey;
   if (k === 'Escape' || (!mod && k.toLowerCase() === 'b')) { e.preventDefault(); closeGraph(); return; }

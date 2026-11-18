@@ -139,7 +139,7 @@ fn parse_decorations(d: &str) -> Vec<RefLabel> {
     out
 }
 
-fn parse_branch_line(line: &str) -> Option<Branch> {
+pub(crate) fn parse_branch_line(line: &str) -> Option<Branch> {
     let f: Vec<&str> = line.splitn(7, '\x1f').collect();
     let [head, refname, hash, upstream, track, ts, subject] = f.as_slice() else { return None };
     let (name, remote) = if let Some(n) = refname.strip_prefix("refs/heads/") {

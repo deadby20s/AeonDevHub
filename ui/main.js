@@ -26,6 +26,14 @@ const ICON_PATHS = {
   star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   back: '<path d="M19 12H5M11 18l-6-6 6-6"/>',
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  note: '<path d="M5 3h10l4 4v14H5z"/><path d="M9 11h6M9 15h6M9 7h3"/>',
+  play: '<path d="M7 4.5v15l12-7.5z"/>',
+  pr: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V9a3 3 0 0 0-3-3h-4M13 3l-3 3 3 3"/>',
+  diff: '<path d="M12 3v8M8 7h8M8 17h8M5 3h14v18H5z"/>',
+  broom: '<path d="M14 4l6 6M17 7l-7 7M10 14l-6 6M7 11l6 6-3 3H4v-6z"/>',
+  warn: '<path d="M12 3 2 20h20zM12 10v4M12 17h.01"/>',
   graph: '<circle cx="12" cy="19" r="2.5"/><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M6 7.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7.5M12 12v4.5"/>',
   cloud: '<path d="M7 18a4.5 4.5 0 0 1-.5-9 6 6 0 0 1 11.5 2 3.5 3.5 0 0 1 0 7z"/>',
   tag: '<path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
@@ -80,7 +88,16 @@ const state = {
   view: [],
   scanning: false,
   lastScan: 0,
+  fetching: false,
+  gh: {},               // path → GitHub info (PRs, CI)
+  ghAvailable: false,
+  ghLast: 0,
+  scripts: new Map(),   // path → detected scripts (loaded when details open)
 };
+const isGithub = (p) => (webUrl(p.git?.remoteUrl) || '').startsWith('https://github.com/');
+const noteOf = (p) => state.config.notes?.[p.path] || '';
+const openedAt = (p) => state.config.recent?.[p.path] || 0;
+const overlayOpen = () => !!document.querySelector('.overlay:not([hidden]), dialog[open]');
 const byPath = (path) => state.projects.find((p) => p.path === path);
 const isPinned = (p) => state.config.pinned.includes(p.path);
 
@@ -105,12 +122,13 @@ function visible() {
   let list = state.projects.filter((p) => !hidden.has(p.path) && FILTERS[state.filter](p));
   if (tokens.length) {
     list = list.filter((p) => {
-      const hay = [p.name, shortPath(p.path), p.git?.branch, p.git?.lastCommit?.subject, ...p.kinds].join(' ').toLowerCase();
+      const hay = [p.name, shortPath(p.path), p.git?.branch, p.git?.lastCommit?.subject, noteOf(p), ...p.kinds].join(' ').toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
   }
   const cmp = {
     recent: (a, b) => activity(b) - activity(a),
+    opened: (a, b) => openedAt(b) - openedAt(a) || activity(b) - activity(a),
     name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
     changes: (a, b) => changes(b) - changes(a) || activity(b) - activity(a),
     todos: (a, b) => b.todoCount - a.todoCount || activity(b) - activity(a),
@@ -127,7 +145,29 @@ function statusBadge(g) {
   const n = g.staged + g.modified + g.untracked;
   if (!n) return '<span class="badge green">clean</span>';
   const parts = [g.staged && `${g.staged} staged`, g.modified && `${g.modified} modified`, g.untracked && `${g.untracked} untracked`].filter(Boolean);
-  return `<span class="badge amber" title="${parts.join(', ')}">${n} changed</span>`;
+  return `<button class="badge amber" data-action="changes" title="${parts.join(', ')} — click to see the changes (C)">${n} changed</button>`;
+}
+
+const CI_LABEL = { success: 'passed', failure: 'failed', cancelled: 'cancelled', skipped: 'skipped', timed_out: 'timed out', action_required: 'needs action' };
+function ciState(ci) {
+  if (!ci) return null;
+  if (ci.status !== 'completed') return { cls: 'running', label: 'running' };
+  const bad = ['failure', 'timed_out', 'startup_failure'].includes(ci.conclusion);
+  return { cls: ci.conclusion === 'success' ? 'ok' : bad ? 'bad' : 'neutral', label: CI_LABEL[ci.conclusion] || ci.conclusion || 'done' };
+}
+function ciDot(p) {
+  const ci = state.gh[p.path]?.ci;
+  const s = ciState(ci);
+  if (!s || (ci.branch && p.git?.branch && ci.branch !== p.git.branch)) return '';
+  return `<span class="ci ${s.cls}" title="${esc(`CI ${s.label}: ${ci.name} on ${ci.branch}`)}"></span>`;
+}
+function prChip(p) {
+  const info = state.gh[p.path];
+  if (!info?.prs?.length) return '';
+  const review = info.prs.filter((x) => x.reviewRequested).length;
+  const head = `${info.prs.length} open PR${info.prs.length === 1 ? '' : 's'}${review ? `, ${review} waiting for your review` : ''}`;
+  const tip = [head, ...info.prs.map((x) => `#${x.number} ${x.title}${x.reviewRequested ? ' (your review)' : ''}`)].join('\n');
+  return `<span class="pr-chip${review ? ' review' : ''}" title="${esc(tip)}">${icon('pr')}${info.prs.length}</span>`;
 }
 
 function rowHtml(p) {
@@ -139,6 +179,7 @@ function rowHtml(p) {
     const name = g.branch === '(detached)' ? 'detached' : g.branch || '?';
     const tip = g.upstream ? `tracking ${g.upstream}` : g.remoteUrl ? 'not pushed (no upstream)' : 'local only';
     branch = `<span class="branch" title="${esc(tip)}">${icon('branch')}<span class="mono ellipsis">${esc(name)}</span></span>`
+      + ciDot(p)
       + (g.ahead ? `<span class="ab up" title="${g.ahead} commit(s) to push">↑${g.ahead}</span>` : '')
       + (g.behind ? `<span class="ab down" title="${g.behind} commit(s) to pull">↓${g.behind}</span>` : '');
   }
@@ -153,8 +194,10 @@ function rowHtml(p) {
   return `<div class="row${state.selected === p.path ? ' selected' : ''}${open ? ' open' : ''}" data-path="${esc(p.path)}">
     <button class="icon-btn star${pinned ? ' on' : ''}" data-action="pin" title="${pinned ? 'Unpin' : 'Pin to top'} (P)">${icon('star')}</button>
     <div class="col-name">
-      <div class="name"><span class="ellipsis">${esc(p.name)}</span>${p.kinds.map((k) => `<span class="kind">${esc(k)}</span>`).join('')}</div>
-      <div class="path ellipsis" title="${esc(p.path)}">${esc(shortPath(p.path))}</div>
+      <div class="name"><span class="ellipsis">${esc(p.name)}</span>${p.kinds.map((k) => `<span class="kind">${esc(k)}</span>`).join('')}${prChip(p)}</div>
+      ${noteOf(p)
+        ? `<div class="note-line ellipsis" title="${esc(noteOf(p))}">${icon('note')}${esc(noteOf(p).split('\n')[0])}</div>`
+        : `<div class="path ellipsis" title="${esc(p.path)}">${esc(shortPath(p.path))}</div>`}
     </div>
     <div class="col-branch">${branch}</div>
     <div class="col-status">${statusBadge(g)}</div>
@@ -184,6 +227,7 @@ function detailsHtml(p) {
     }
     if (g.remoteUrl) rows.push(['Remote', `<span class="mono selectable">${esc(g.remoteUrl)}</span>`]);
   }
+  if (openedAt(p)) rows.push(['Last opened', `<span title="${esc(new Date(openedAt(p) * 1000).toLocaleString())}">${ago(openedAt(p))} from Dev Hub</span>`]);
   let todos = '';
   if (p.todoCount) {
     const items = p.todos.map((t, i) => `<button class="todo" data-action="todo" data-i="${i}" title="Open ${esc(t.file)}:${t.line}">
@@ -194,20 +238,79 @@ function detailsHtml(p) {
     const more = p.todoCount > p.todos.length ? `<div class="more">Showing the first ${p.todos.length} of ${p.todoCount}.</div>` : '';
     todos = `<div class="todos"><div class="todos-head">TODOs · ${p.todoCount} — click one to open it in ${esc(editorName())}</div><div class="todos-scroll">${items}${more}</div></div>`;
   }
+  const git = g && !g.error;
   return `<div class="details" data-path="${esc(p.path)}">
-    <dl class="meta">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+    <div class="details-grid">
+      <dl class="meta">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+      <label class="note-box">
+        <span class="sub-head">${icon('note')}Note</span>
+        <textarea data-note placeholder="Where you left off, what's next…" spellcheck="true">${esc(noteOf(p))}</textarea>
+      </label>
+    </div>
+    ${scriptsHtml(p)}
+    ${githubHtml(p)}
     ${todos}
     <div class="detail-actions">
-      ${g && !g.error ? `<button class="btn sm" data-action="graph">${icon('graph')}Branch graph</button>` : ''}
-      <button class="btn sm" data-action="rescan">${icon('refresh')}Rescan this project</button>
+      ${git ? `<button class="btn sm" data-action="graph">${icon('graph')}Branch graph</button>` : ''}
+      ${git ? `<button class="btn sm" data-action="changes">${icon('diff')}Changes</button>` : ''}
+      ${git ? `<button class="btn sm" data-action="cleanup">${icon('broom')}Clean up branches</button>` : ''}
+      ${git && g.remoteUrl ? `<button class="btn sm" data-action="fetch-one">${icon('download')}Fetch</button>` : ''}
+      <button class="btn sm" data-action="rescan">${icon('refresh')}Rescan</button>
       <button class="btn sm" data-action="hide">${icon('eyeOff')}Hide from list</button>
     </div>
   </div>`;
 }
 
+function scriptsHtml(p) {
+  const list = state.scripts.get(p.path);
+  if (list === undefined) return `<div class="scripts"><span class="sub-head">${icon('play')}Scripts</span><span class="faint">Looking for scripts…</span></div>`;
+  if (!list.length) return '';
+  const groups = new Map();
+  list.forEach((s, i) => groups.set(s.group, [...(groups.get(s.group) || []), [s, i]]));
+  return `<div class="scripts"><span class="sub-head">${icon('play')}Scripts <span class="faint">· opens in a terminal</span></span>
+    ${[...groups].map(([group, items]) => `<div class="script-group"><span class="script-runner">${esc(group)}</span>${items.map(([s, i]) =>
+      `<button class="script" data-action="script" data-i="${i}" title="${esc(`${s.command}${s.cwd ? ` (in ${s.cwd})` : ''}`)}">${icon('play')}${esc(s.name)}</button>`).join('')}</div>`).join('')}
+  </div>`;
+}
+
+function githubHtml(p) {
+  if (!state.config.github || !isGithub(p)) return '';
+  const info = state.gh[p.path];
+  const refresh = `<button class="link" data-action="gh-refresh" title="Refresh from GitHub">${icon('refresh')}</button>`;
+  if (!state.ghAvailable) return `<div class="gh"><span class="sub-head">${icon('pr')}GitHub</span><span class="faint">Install the GitHub CLI (gh) and run <span class="mono">gh auth login</span> to see PRs and CI here.</span></div>`;
+  if (!info) return `<div class="gh"><span class="sub-head">${icon('pr')}GitHub ${refresh}</span><span class="faint">Loading…</span></div>`;
+  if (info.error) return `<div class="gh"><span class="sub-head">${icon('pr')}GitHub ${refresh}</span><span class="faint selectable">${esc(info.error)}</span></div>`;
+  const s = ciState(info.ci);
+  const ci = s
+    ? `<button class="gh-ci" data-action="url" data-url="${esc(info.ci.url)}"><span class="ci ${s.cls}"></span>CI ${esc(s.label)} <span class="faint">· ${esc(info.ci.name)} on ${esc(info.ci.branch)} · ${ago(Date.parse(info.ci.createdAt) / 1000)}</span></button>`
+    : '<span class="faint">No CI runs</span>';
+  const REVIEW = { APPROVED: ['ok', 'approved'], CHANGES_REQUESTED: ['bad', 'changes requested'], REVIEW_REQUIRED: ['neutral', 'review required'] };
+  const prs = info.prs.length
+    ? info.prs.map((x) => {
+      const [cls, label] = REVIEW[x.review] || [];
+      return `<button class="gh-pr" data-action="url" data-url="${esc(x.url)}" title="${esc(x.url)}">
+          <span class="mono faint">#${x.number}</span><span class="ellipsis">${esc(x.title)}</span>
+          ${x.draft ? '<span class="tag-mini">draft</span>' : ''}
+          ${x.reviewRequested ? '<span class="tag-mini accent">your review</span>' : ''}
+          ${label ? `<span class="tag-mini ${cls}">${label}</span>` : ''}
+          <span class="faint nowrap">${esc(x.author)} · ${esc(x.branch)}</span></button>`;
+    }).join('')
+    : '<span class="faint">No open pull requests</span>';
+  return `<div class="gh"><span class="sub-head">${icon('pr')}GitHub ${refresh}<span class="faint">· updated ${ago(info.fetchedAt)}</span></span>
+    <div class="gh-body">${ci}<div class="gh-prs">${prs}</div></div></div>`;
+}
+
 const HEAD = `<div class="row head"><span></span><span>Project</span><span class="col-branch">Branch</span><span class="col-status">Status</span><span class="col-commit">Last commit</span><span class="col-todo">TODOs</span><span></span></div>`;
 
+/** Re-render unless the user is typing a note (that would throw away their cursor). */
+let renderDeferred = false;
+function safeRender() {
+  if (document.activeElement?.matches?.('[data-note]')) { renderDeferred = true; return; }
+  render();
+}
+
 function render() {
+  renderDeferred = false;
   const list = visible();
   state.view = list;
   if (!list.some((p) => p.path === state.selected)) state.selected = list[0]?.path ?? null;
@@ -220,6 +323,7 @@ function render() {
     el.innerHTML = emptyHtml();
   }
   el.scrollTop = scroll;
+  loadScriptsFor(list.filter((p) => state.expanded.has(p.path)));
 
   // filter chips + counts
   const hidden = new Set(state.config.hidden);
@@ -234,7 +338,8 @@ function render() {
   const parts = [`${all.length} project${all.length === 1 ? '' : 's'}`];
   if (list.length !== all.length) parts[0] = `${list.length} of ${all.length} projects`;
   parts.push(`${all.filter(FILTERS.dirty).length} uncommitted`, `${all.filter(unsynced).length} unpushed/behind`, `${todoTotal} TODOs`);
-  parts.push(state.scanning ? 'scanning…' : state.lastScan ? `scanned ${ago(state.lastScan / 1000)}` : 'cached');
+  parts.push(state.fetching ? 'fetching…' : state.scanning ? 'scanning…' : state.lastScan ? `scanned ${ago(state.lastScan / 1000)}` : 'cached');
+  if (state.config.autoRefresh) parts.push('auto-refresh on');
   parts.push(`editor: ${editorName()}`);
   $('#status').textContent = parts.join(' · ');
 }
@@ -292,16 +397,37 @@ async function act(action, p, el) {
     switch (action) {
       case 'open':
         await invoke('open_in_editor', { path: p.path });
+        markOpened(p);
         toast(`Opening ${p.name} in ${editorName()}`);
         break;
       case 'todo': {
         const t = p.todos[Number(el.dataset.i)];
         await invoke('open_in_editor', { path: p.path, file: t.file, line: t.line });
+        markOpened(p);
         toast(`Opening ${t.file}:${t.line}`);
         break;
       }
       case 'graph': if (p.git && !p.git.error) openGraph(p); break;
-      case 'term': await invoke('open_terminal', { path: p.path }); break;
+      case 'changes': if (p.git && !p.git.error) openChanges(p); break;
+      case 'cleanup': if (p.git && !p.git.error) openCleanup(p); break;
+      case 'term':
+        await invoke('open_terminal', { path: p.path });
+        markOpened(p);
+        break;
+      case 'script': {
+        const s = state.scripts.get(p.path)?.[Number(el.dataset.i)];
+        if (!s) break;
+        await invoke('run_script', { path: p.path, id: s.id });
+        markOpened(p);
+        toast(`Running ${s.command}`);
+        break;
+      }
+      case 'fetch-one':
+        toast(`Fetching ${p.name}…`);
+        await fetchRepos([p]);
+        break;
+      case 'gh-refresh': await refreshGithub([p], { force: true }); break;
+      case 'url': if (el.dataset.url) await invoke('open_url', { url: el.dataset.url }); break;
       case 'folder': await invoke('open_folder', { path: p.path }); break;
       case 'web': { const u = webUrl(p.git?.remoteUrl); if (u) await invoke('open_url', { url: u }); break; }
       case 'expand': select(p.path, false); toggle(p.path); break;
@@ -332,6 +458,105 @@ async function act(action, p, el) {
   }
 }
 
+function markOpened(p) {
+  state.config.recent = { ...(state.config.recent || {}), [p.path]: Math.floor(Date.now() / 1000) };
+  if (state.sort === 'opened') safeRender();
+}
+
+function replaceProject(fresh) {
+  if (!fresh || !byPath(fresh.path)) return;
+  state.projects = state.projects.map((x) => (x.path === fresh.path ? fresh : x));
+  state.scripts.delete(fresh.path); // package.json etc. may have changed
+}
+
+/* scripts are detected per project when its details open */
+const scriptsLoading = new Set();
+function loadScriptsFor(projects) {
+  for (const p of projects) {
+    if (state.scripts.has(p.path) || scriptsLoading.has(p.path)) continue;
+    scriptsLoading.add(p.path);
+    invoke('project_scripts', { path: p.path })
+      .then((list) => state.scripts.set(p.path, list))
+      .catch(() => state.scripts.set(p.path, []))
+      .finally(() => { scriptsLoading.delete(p.path); safeRender(); });
+  }
+}
+
+/* ---------- notes ---------- */
+let noteTimer;
+$('#list').addEventListener('input', (e) => {
+  const ta = e.target.closest('[data-note]');
+  if (!ta) return;
+  const path = ta.closest('[data-path]').dataset.path;
+  const notes = { ...(state.config.notes || {}) };
+  const text = ta.value.trim() ? ta.value : '';
+  if (text) notes[path] = text; else delete notes[path];
+  state.config.notes = notes;
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => saveConfig().catch((err) => toast(String(err), true)), 500);
+});
+$('#list').addEventListener('focusout', (e) => {
+  if (e.target.matches?.('[data-note]') && renderDeferred) setTimeout(safeRender, 0);
+});
+
+/* ---------- fetch ---------- */
+async function fetchRepos(projects) {
+  const repos = projects.filter((p) => p.git && !p.git.error && p.git.remoteUrl);
+  if (!repos.length || state.fetching) return;
+  state.fetching = true;
+  $('#fetch-all').classList.add('spinning');
+  $('#progress').classList.add('indeterminate');
+  safeRender();
+  try {
+    const results = await invoke('fetch_all', { paths: repos.map((p) => p.path) });
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length) {
+      const name = (path) => byPath(path)?.name || path;
+      toast(`Fetched ${results.length - failed.length} of ${results.length}. Failed: ${failed.map((f) => `${name(f.path)} (${(f.error || '').split('\n')[0]})`).join('; ')}`, true);
+    } else {
+      toast(`Fetched ${results.length} repo${results.length === 1 ? '' : 's'}`);
+    }
+  } catch (err) {
+    toast(String(err), true);
+  } finally {
+    state.fetching = false;
+    $('#fetch-all').classList.remove('spinning');
+  }
+  if (repos.length === 1) {
+    replaceProject(await invoke('scan_project', { path: repos[0].path }).catch(() => null));
+    safeRender();
+  } else {
+    await scan({ quiet: true });
+  }
+  refreshGithub(repos, { force: true });
+}
+listen('fetch-progress', (e) => {
+  const [done, total] = e.payload;
+  const bar = $('#progress');
+  bar.classList.remove('indeterminate');
+  bar.firstElementChild.style.width = `${Math.round((done / total) * 100)}%`;
+});
+
+/* ---------- GitHub ---------- */
+let ghBusy = false;
+async function refreshGithub(projects, { force = false } = {}) {
+  if (!state.config.github || !state.ghAvailable || ghBusy) return;
+  if (!force && Date.now() - state.ghLast < 10 * 60_000) return;
+  const repos = projects.filter((p) => isGithub(p));
+  if (!repos.length) return;
+  ghBusy = true;
+  try {
+    const fresh = await invoke('github_info', { repos: repos.map((p) => ({ path: p.path, branch: p.git?.branch && p.git.branch !== '(detached)' ? p.git.branch : null })) });
+    state.gh = { ...state.gh, ...fresh };
+    if (repos.length > 1 || !force) state.ghLast = Date.now();
+    safeRender();
+  } catch (err) {
+    if (force) toast(String(err), true);
+  } finally {
+    ghBusy = false;
+  }
+}
+
 async function scan({ quiet = false } = {}) {
   if (state.scanning) return;
   state.scanning = true;
@@ -351,9 +576,29 @@ async function scan({ quiet = false } = {}) {
     bar.classList.remove('indeterminate');
     bar.firstElementChild.style.width = '100%';
     setTimeout(() => { bar.firstElementChild.style.width = '0'; }, 250);
-    render();
+    safeRender();
   }
+  refreshGithub(state.projects);
 }
+
+// The file watcher rescanned one project.
+listen('project-updated', (e) => {
+  const fresh = e.payload;
+  if (!byPath(fresh.path)) return;
+  replaceProject(fresh);
+  safeRender();
+  if (typeof changesProjectUpdated === 'function') changesProjectUpdated(fresh);
+});
+// The global hotkey or a second launch brought the window up.
+listen('focus-search', () => {
+  if (overlayOpen()) return;
+  search.focus();
+  search.select();
+});
+listen('tray-action', (e) => {
+  if (e.payload === 'rescan') scan();
+  if (e.payload === 'fetch') fetchRepos(state.projects);
+});
 
 listen('scan-progress', (e) => {
   const [done, total] = e.payload;
@@ -403,11 +648,13 @@ const sortSel = $('#sort');
 sortSel.value = state.sort;
 sortSel.addEventListener('change', () => { state.sort = sortSel.value; store.set('sort', state.sort); render(); });
 $('#refresh').addEventListener('click', () => scan());
+$('#fetch-all').addEventListener('click', () => fetchRepos(state.projects.filter((p) => !state.config.hidden.includes(p.path))));
+$('#activity-btn').addEventListener('click', () => openActivity());
 $('#settings-btn').addEventListener('click', () => openSettings());
 
 /* ---------- keyboard ---------- */
 document.addEventListener('keydown', (e) => {
-  if ($('#settings').open || graphOpen()) return;
+  if (overlayOpen()) return;
   const k = e.key;
   const inSearch = document.activeElement === search;
   const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName) && !inSearch;
@@ -426,8 +673,17 @@ document.addEventListener('keydown', (e) => {
     if (inSearch && search.value) { search.value = ''; search.dispatchEvent(new Event('input')); } else search.blur();
     return;
   }
-  if (inSearch || !p) return;
-  const keyActions = { b: 'graph', t: 'term', f: 'folder', p: 'pin', o: 'web', ' ': 'expand', ArrowRight: 'expand', ArrowLeft: 'expand' };
+  if (inSearch) return;
+  if (k.toLowerCase() === 'a' && !e.shiftKey) { e.preventDefault(); openActivity(); return; }
+  if (k === 'F' && e.shiftKey) { e.preventDefault(); $('#fetch-all').click(); return; }
+  if (!p) return;
+  if (k.toLowerCase() === 'n') { // jump to the note
+    e.preventDefault();
+    if (!state.expanded.has(p.path)) toggle(p.path);
+    document.querySelector(`.details[data-path="${CSS.escape(p.path)}"] [data-note]`)?.focus();
+    return;
+  }
+  const keyActions = { b: 'graph', c: 'changes', t: 'term', f: 'folder', p: 'pin', o: 'web', ' ': 'expand', ArrowRight: 'expand', ArrowLeft: 'expand' };
   const action = keyActions[k.length === 1 ? k.toLowerCase() : k];
   if (!action) return;
   if (k === 'ArrowRight' && state.expanded.has(p.path)) return;
@@ -436,9 +692,11 @@ document.addEventListener('keydown', (e) => {
   act(action, p);
 });
 
-// Refresh git status when coming back to the window after a while.
+// Refresh git status when coming back to the window after a while
+// (rarely when the file watcher is keeping things current anyway).
 window.addEventListener('focus', () => {
-  if (Date.now() - state.lastScan > 120_000 && state.config?.roots.length) scan({ quiet: true });
+  const every = state.config?.autoRefresh ? 15 * 60_000 : 2 * 60_000;
+  if (Date.now() - state.lastScan > every && state.config?.roots.length) scan({ quiet: true });
 });
 
 /* ---------- settings ---------- */
@@ -455,6 +713,11 @@ function openSettings() {
   $('#editor-custom').hidden = known;
   $('#depth').value = draft.scanDepth;
   $('#scan-todos').checked = draft.scanTodos;
+  $('#auto-refresh').checked = draft.autoRefresh;
+  $('#gh-enabled').checked = draft.github;
+  $('#close-to-tray').checked = draft.closeToTray;
+  $('#hotkey').value = draft.hotkey;
+  $('#gh-status').textContent = state.ghAvailable ? '' : 'GitHub CLI (gh) not found.';
   $('#root-input').value = '';
   renderSettingsLists();
   checkEditor();
@@ -510,14 +773,41 @@ $('#editor-preset').addEventListener('change', (e) => {
 });
 $('#editor-custom').addEventListener('input', checkEditor);
 
+// Record a shortcut by pressing it.
+$('#hotkey').addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') return;
+  e.preventDefault();
+  if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.altKey && !e.metaKey) { e.target.value = ''; return; }
+  if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+  const code = e.code;
+  const key = /^Key[A-Z]$/.test(code) ? code.slice(3)
+    : /^Digit\d$/.test(code) ? code.slice(5)
+      : /^F\d{1,2}$/.test(code) || ['Space', 'Enter', 'Backquote', 'Minus', 'Equal', 'Comma', 'Period', 'Slash', 'Semicolon', 'Quote', 'BracketLeft', 'BracketRight', 'Backslash', 'Home', 'End', 'PageUp', 'PageDown', 'Insert'].includes(code) ? code
+        : null;
+  if (!key) return;
+  const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
+  if (!mods.length && !/^F\d/.test(key)) { $('#hotkey-help').textContent = 'Use at least one of Ctrl, Alt, Shift or Win.'; return; }
+  $('#hotkey-help').textContent = 'Shows or hides Dev Hub from anywhere. Backspace clears it.';
+  e.target.value = [...mods, key].join('+');
+});
+
 $('#settings-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   addRoot($('#root-input').value); // keep a typed-but-not-added path
   draft.editor = $('#editor-preset').value || $('#editor-custom').value.trim() || 'code';
   draft.scanDepth = Math.min(6, Math.max(1, parseInt($('#depth').value, 10) || 3));
   draft.scanTodos = $('#scan-todos').checked;
+  draft.autoRefresh = $('#auto-refresh').checked;
+  draft.github = $('#gh-enabled').checked;
+  draft.closeToTray = $('#close-to-tray').checked;
+  draft.hotkey = $('#hotkey').value.trim();
+  // Keep notes/recents written since the dialog opened.
+  draft.notes = state.config.notes;
+  draft.recent = state.config.recent;
   try {
-    await invoke('save_config', { config: draft });
+    await invoke('save_config', { config: draft }).catch((err) => {
+      if (String(err).startsWith('Settings saved')) toast(String(err), true); else throw err;
+    });
     state.config = draft;
     dlg.close();
     render();
@@ -530,8 +820,9 @@ $('#settings-form').addEventListener('submit', async (e) => {
 /* ---------- start ---------- */
 (async function init() {
   try {
-    [state.config, state.projects, state.home] = await Promise.all([
+    [state.config, state.projects, state.home, state.ghAvailable, state.gh] = await Promise.all([
       invoke('get_config'), invoke('load_cached'), invoke('home_dir'),
+      invoke('github_available').catch(() => false), invoke('github_cached').catch(() => ({})),
     ]);
   } catch (err) {
     toast(String(err), true);
@@ -593,7 +884,9 @@ function demoInvoke(cmd, args) {
   const commit = (subject, author, hoursAgo) => ({ hash: Math.random().toString(16).slice(2, 9), subject, author, timestamp: now - hoursAgo * 3600 });
   const git = (o) => ({ branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0, staged: 0, modified: 0, untracked: 0, conflicts: 0, lastCommit: null, remoteUrl: null, error: null, ...o });
   const demo = demoInvoke.data ||= {
-    config: { roots: ['C:\\Users\\dev\\projects'], editor: 'code', scanDepth: 3, scanTodos: true, hidden: [], pinned: ['C:\\Users\\dev\\projects\\tauri\\AeonDataStudio'] },
+    config: { roots: ['C:\\Users\\dev\\projects'], editor: 'code', scanDepth: 3, scanTodos: true, hidden: [], pinned: ['C:\\Users\\dev\\projects\\tauri\\AeonDataStudio'],
+      notes: { 'C:\\Users\\dev\\projects\\py\\ml-sandbox': 'Left off tuning the learning-rate schedule.\nNext: try cosine warmup.' },
+      recent: {}, hotkey: 'Ctrl+Alt+Space', closeToTray: true, autoRefresh: true, github: true },
     projects: [
       { name: 'AeonDataStudio', path: 'C:\\Users\\dev\\projects\\tauri\\AeonDataStudio', kinds: ['rust', 'tauri'], modified: now, todoCount: 14,
         todos: [{ file: 'core/src/pipeline.rs', line: 118, kind: 'TODO', text: 'stream rows instead of collecting the whole batch' }, { file: 'src/app.rs', line: 42, kind: 'FIXME', text: 'dialog loses focus after export' }, { file: 'cli/src/main.rs', line: 9, kind: 'HACK', text: 'work around clap env parsing' }],
@@ -618,6 +911,49 @@ function demoInvoke(cmd, args) {
     case 'check_editor': return Promise.resolve(args.editor === 'code' ? 'C:\\…\\Microsoft VS Code\\bin\\code.cmd' : null);
     case 'scan_project': return Promise.resolve(structuredClone(demo.projects.find((p) => p.path === args.path)));
     case 'git_graph': return new Promise((r) => setTimeout(() => r(demoGraph(now)), 150));
+    case 'github_available': return Promise.resolve(true);
+    case 'github_cached': return Promise.resolve({});
+    case 'github_info': return Promise.resolve(Object.fromEntries(args.repos.map(({ path }) => [path, {
+      fetchedAt: now, error: null,
+      ci: { name: 'CI', status: 'completed', conclusion: path.includes('blog') ? 'failure' : 'success', url: 'https://github.com/dev/x/actions/runs/1', branch: 'main', createdAt: new Date((now - 7200) * 1000).toISOString() },
+      prs: path.includes('AeonDataStudio') ? [
+        { number: 16, title: 'Streaming parquet export', url: 'https://github.com/dev/AeonDataStudio/pull/16', draft: false, author: 'collaborator', branch: 'feature/export', review: 'REVIEW_REQUIRED', reviewRequested: true, mine: false },
+        { number: 15, title: 'WIP: wasm core', url: 'https://github.com/dev/AeonDataStudio/pull/15', draft: true, author: 'dev', branch: 'experiment/wasm', review: '', reviewRequested: false, mine: true },
+      ] : [],
+    }])));
+    case 'fetch_all': return new Promise((r) => setTimeout(() => r(args.paths.map((path) => ({ path, ok: !path.includes('jam'), error: path.includes('jam') ? 'fatal: could not read Username for https://gitlab.com' : null }))), 700));
+    case 'project_scripts': return Promise.resolve(args.path.includes('blog')
+      ? ['dev', 'build', 'preview', 'lint'].map((n) => ({ id: n, group: 'pnpm', name: n, command: `pnpm ${n}`, cwd: '' }))
+      : args.path.includes('AeonDataStudio') ? [...['build', 'run', 'test', 'check', 'clippy'].map((n) => ({ id: n, group: 'cargo', name: n, command: `cargo ${n}`, cwd: '' })), { id: 'td', group: 'tauri', name: 'dev', command: 'cargo tauri dev', cwd: 'src-tauri' }] : []);
+    case 'stale_branches': return new Promise((r) => setTimeout(() => r({ base: 'main', branches: [
+      { name: 'fix/ci', merged: true, gone: true, upstream: 'origin/fix/ci', timestamp: now - 86400 * 3, subject: 'Cache cargo registry in CI' },
+      { name: 'old/prototype', merged: false, gone: true, upstream: 'origin/old/prototype', timestamp: now - 86400 * 40, subject: 'TODO scanner' },
+      { name: 'release/0.2.0', merged: true, gone: false, upstream: null, timestamp: now - 86400 * 60, subject: 'Release 0.2.0' },
+    ] }), 200));
+    case 'delete_branches': return Promise.resolve(args.names.map((name) => ({ name, ok: true, error: null })));
+    case 'changed_files': return Promise.resolve([
+      { path: 'src/export/parquet.rs', orig: null, x: 'M', y: 'M' },
+      { path: 'src/app.rs', orig: null, x: ' ', y: 'M' },
+      { path: 'src/export/writer.rs', orig: 'src/writer.rs', x: 'R', y: ' ' },
+      { path: 'docs/export.md', orig: null, x: '?', y: '?' },
+    ]);
+    case 'file_diff': return Promise.resolve({ binary: false, truncated: false, text: args.file.endsWith('.md')
+      ? 'new file\n@@ -0,0 +1,3 @@\n+# Export\n+\n+Dev Hub can export to parquet.\n'
+      : 'diff --git a/x b/x\nindex 1..2 100644\n--- a/x\n+++ b/x\n@@ -40,7 +40,9 @@ impl Exporter {\n     pub fn write(&mut self, rows: &[Row]) -> Result<()> {\n-        let batch = self.collect(rows)?;\n-        self.writer.write(&batch)?;\n+        for chunk in rows.chunks(self.batch_size) {\n+            let batch = self.collect(chunk)?;\n+            self.writer.write(&batch)?;\n+        }\n         self.rows += rows.len();\n         Ok(())\n     }\n' });
+    case 'activity': return Promise.resolve(args.paths.map((path, i) => {
+      const commits = [];
+      let seed = i * 7919 + 13;
+      const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      const busy = [0.55, 0.25, 0.12, 0.04, 0.08][i % 5];
+      for (let d = 0; d < 365; d++) {
+        if (rnd() < busy * (d < 120 ? 1.3 : 0.7)) {
+          const n = 1 + Math.floor(rnd() * 5);
+          for (let k = 0; k < n; k++) commits.push(Math.floor(now - d * 86400 - rnd() * 40000));
+        }
+      }
+      return { path, commits, email: 'dev@users.noreply.github.com' };
+    }));
+    case 'open_in_editor': case 'open_terminal': case 'open_folder': case 'open_url': case 'run_script': return Promise.resolve();
     default: return Promise.reject(`Demo mode: "${cmd}" only works in the desktop app.`);
   }
 }

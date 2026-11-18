@@ -157,6 +157,65 @@ pub fn open_terminal(dir: &Path) -> Result<(), String> {
     }
 }
 
+/// Quotes one argument for PowerShell: bare if it's plainly safe, else in single quotes.
+fn ps_quote(arg: &str) -> String {
+    let safe = !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || "_./:=@+-\\".contains(c));
+    if safe { arg.to_string() } else { format!("'{}'", arg.replace('\'', "''")) }
+}
+
+/// Quotes one argument for sh.
+#[cfg(unix)]
+fn sh_quote(arg: &str) -> String {
+    format!("'{}'", arg.replace('\'', r"'\''"))
+}
+
+/// Opens a terminal in `dir` running `argv`, and keeps it open afterwards.
+pub fn run_in_terminal(dir: &Path, argv: &[String], title: &str) -> Result<(), String> {
+    if argv.is_empty() {
+        return Err("Nothing to run".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let first = ps_quote(&argv[0]);
+        let call = if first.starts_with('\'') { format!("& {first}") } else { first };
+        let ps = std::iter::once(call).chain(argv[1..].iter().map(|a| ps_quote(a))).collect::<Vec<_>>().join(" ");
+        if let Some(wt) = find_exe("wt") {
+            // `;` separates wt commands, so escape it inside our arguments.
+            let mut c = Command::new(wt);
+            c.args(["-w", "0", "new-tab", "--title"])
+                .arg(title.replace(';', r"\;"))
+                .arg("-d")
+                .arg(dir)
+                .args(["powershell.exe", "-NoExit", "-Command"])
+                .arg(ps.replace(';', r"\;"));
+            return spawn(c, "Windows Terminal");
+        }
+        let mut c = Command::new("powershell.exe");
+        c.args(["-NoExit", "-Command", &ps]).current_dir(dir).creation_flags(0x0000_0010);
+        spawn(c, "PowerShell")
+    }
+    #[cfg(unix)]
+    {
+        let _ = title;
+        let cmd = argv.iter().map(|a| sh_quote(a)).collect::<Vec<_>>().join(" ");
+        let script = format!("cd {} && {}", sh_quote(&dir.display().to_string()), cmd);
+        #[cfg(target_os = "macos")]
+        {
+            let esc = script.replace('\\', "\\\\").replace('"', "\\\"");
+            let mut c = Command::new("osascript");
+            c.args(["-e", &format!("tell application \"Terminal\" to do script \"{esc}\""), "-e", "tell application \"Terminal\" to activate"]);
+            return spawn(c, "Terminal");
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut c = Command::new("x-terminal-emulator");
+            c.args(["-e", "sh", "-c", &format!("{script}; exec \"${{SHELL:-sh}}\"")]);
+            return spawn(c, "terminal");
+        }
+    }
+}
+
 pub fn open_folder(dir: &Path) -> Result<(), String> {
     let prog = if cfg!(windows) { "explorer.exe" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
     let mut c = Command::new(prog);

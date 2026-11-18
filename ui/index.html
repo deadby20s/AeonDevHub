@@ -24,6 +24,8 @@
       <kbd>/</kbd>
     </label>
     <div class="top-actions">
+      <button id="activity-btn" class="btn" title="Your commit activity across projects (A)"><span data-icon="activity"></span><span>Activity</span></button>
+      <button id="fetch-all" class="btn" title="git fetch every repo with a remote (Shift+F)"><span data-icon="download"></span><span>Fetch all</span></button>
       <button id="refresh" class="btn" title="Rescan all projects (Ctrl+R)"><span data-icon="refresh"></span><span>Rescan</span></button>
       <button id="settings-btn" class="icon-btn" title="Settings (Ctrl+,)"><span data-icon="sliders"></span></button>
     </div>
@@ -40,6 +42,7 @@
     <label class="sort">Sort
       <select id="sort">
         <option value="recent">Last activity</option>
+        <option value="opened">Recently opened</option>
         <option value="name">Name</option>
         <option value="changes">Uncommitted changes</option>
         <option value="todos">Most TODOs</option>
@@ -52,7 +55,7 @@
 
   <footer class="statusbar">
     <span id="status"></span>
-    <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>B</kbd> branches · <kbd>T</kbd> terminal · <kbd>F</kbd> folder · <kbd>Space</kbd> details</span>
+    <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>B</kbd> branches · <kbd>C</kbd> changes · <kbd>T</kbd> terminal · <kbd>N</kbd> note · <kbd>Space</kbd> details</span>
   </footer>
 
   <dialog id="settings">
@@ -85,6 +88,20 @@
               <input id="depth" type="number" min="1" max="6" step="1">
             </label>
             <label class="check"><input id="scan-todos" type="checkbox"> Find TODO, FIXME, HACK and XXX comments</label>
+            <label class="check"><input id="auto-refresh" type="checkbox"> Refresh a project when its files change</label>
+            <label class="check"><input id="gh-enabled" type="checkbox"> Show GitHub PRs and CI <span class="faint" id="gh-status"></span></label>
+          </div>
+        </section>
+        <section class="grid2">
+          <div>
+            <h3>Global shortcut</h3>
+            <input id="hotkey" type="text" placeholder="Click, then press keys" spellcheck="false" autocomplete="off">
+            <p class="help" id="hotkey-help">Shows or hides Dev Hub from anywhere. Backspace clears it.</p>
+          </div>
+          <div>
+            <h3>Window</h3>
+            <label class="check"><input id="close-to-tray" type="checkbox"> Closing the window keeps Dev Hub in the tray</label>
+            <p class="help">Quit from the tray icon's menu.</p>
           </div>
         </section>
         <section id="hidden-section">
@@ -108,6 +125,7 @@
       </div>
       <span class="faint gv-meta" id="gv-meta"></span>
       <div class="top-actions">
+        <button class="btn" id="gv-cleanup" title="Delete merged and orphaned local branches"><span data-icon="broom"></span><span>Clean up</span></button>
         <button class="btn" id="gv-reload" title="Reload (Ctrl+R)"><span data-icon="refresh"></span><span>Reload</span></button>
         <button class="icon-btn" id="gv-term" title="Open terminal here"><span data-icon="terminal"></span></button>
         <button class="btn primary" id="gv-open" title="Open in editor"><span data-icon="code"></span><span>Open</span></button>
@@ -127,8 +145,61 @@
     </div>
   </section>
 
+  <section id="changes-view" class="overlay" hidden aria-label="Changes">
+    <header class="gv-head">
+      <button class="icon-btn" id="cv-close" title="Back to projects (Esc)"><span data-icon="back"></span></button>
+      <div class="gv-title">
+        <h2 id="cv-title"></h2>
+        <span class="faint ellipsis" id="cv-path"></span>
+      </div>
+      <span class="faint gv-meta" id="cv-meta"></span>
+      <div class="top-actions">
+        <button class="btn" id="cv-reload" title="Reload (Ctrl+R)"><span data-icon="refresh"></span><span>Reload</span></button>
+        <button class="btn primary" id="cv-open" title="Open this file in the editor (Enter)"><span data-icon="code"></span><span>Open file</span></button>
+      </div>
+    </header>
+    <div class="gv-body">
+      <aside class="gv-side cv-files" id="cv-files"></aside>
+      <div class="gv-main">
+        <div class="gv-scroll cv-diff" id="cv-diff"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="activity-view" class="overlay" hidden aria-label="Activity">
+    <header class="gv-head">
+      <button class="icon-btn" id="av-close" title="Back to projects (Esc)"><span data-icon="back"></span></button>
+      <div class="gv-title">
+        <h2>Activity</h2>
+        <span class="faint" id="av-sub">Your commits across all projects, last 12 months</span>
+      </div>
+      <div class="top-actions">
+        <button class="btn" id="av-reload" title="Reload"><span data-icon="refresh"></span><span>Reload</span></button>
+      </div>
+    </header>
+    <div class="av-scroll" id="av-body"></div>
+  </section>
+
+  <dialog id="cleanup">
+    <form method="dialog" id="cleanup-form">
+      <header class="dlg-head">
+        <h2 id="cleanup-title">Clean up branches</h2>
+        <button type="button" class="icon-btn" data-close title="Close"><span data-icon="x"></span></button>
+      </header>
+      <div class="dlg-body" id="cleanup-body"></div>
+      <footer class="dlg-foot">
+        <span class="faint cleanup-note" id="cleanup-note"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn danger" id="cleanup-go" disabled>Delete</button>
+      </footer>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="main.js"></script>
   <script src="graph.js"></script>
+  <script src="changes.js"></script>
+  <script src="cleanup.js"></script>
+  <script src="activity.js"></script>
 </body>
 </html>

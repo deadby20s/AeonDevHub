@@ -1,0 +1,78 @@
+name: Linux build
+
+# Builds .deb, .rpm and .AppImage packages and attaches them to a GitHub release.
+# Runs when a release is published, or by hand (Actions → Linux build → Run workflow).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build
+        default: main
+        required: true
+      tag:
+        description: Release tag to attach the packages to (leave empty to only keep them as a workflow artifact)
+        default: ""
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    env:
+      REF: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.ref }}
+      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+
+      - name: Install Tauri's Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libssl-dev build-essential curl wget file patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.com
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build packages
+        run: npx --yes @tauri-apps/cli@2 build --bundles deb,rpm,appimage
+
+      - name: Collect packages
+        run: |
+          mkdir -p dist
+          for f in src-tauri/target/release/bundle/deb/*.deb \
+                   src-tauri/target/release/bundle/rpm/*.rpm \
+                   src-tauri/target/release/bundle/appimage/*.AppImage; do
+            name="$(basename "$f" | tr ' ' '-')"
+            cp "$f" "dist/$name"
+          done
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/*
+
+      - name: Attach to release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"

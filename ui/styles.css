@@ -238,6 +238,7 @@ dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 50
 .dlg-body section { padding-top: 14px; }
 .dlg-body h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .help { margin: 0 0 8px; color: var(--faint); font-size: 12px; }
+.help.error-text { color: var(--red); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .grid2 select, .grid2 input[type=text] { width: 100%; margin-bottom: 6px; }
 input[type=text], input[type=number] {

@@ -17,7 +17,7 @@ A small Tauri 2 desktop app that lists all your local projects with git status, 
 - **Activity**: a year-long heatmap of your commits across every project, streaks, per-project 12-week activity, plus projects with work waiting and dormant ones.
 - **Recently opened**: sort by the projects you last opened from Dev Hub.
 - **Auto-refresh**: a file watcher rescans a project about 1.5 s after its files or git state change (build folders like `target` and `node_modules` are ignored).
-- **Tray and global shortcut**: `Ctrl+Alt+Space` (configurable) shows or hides Dev Hub from anywhere and focuses search. Closing the window keeps it in the tray; quit from the tray menu. Launching it again brings the existing window forward.
+- **Tray and global shortcut**: `Ctrl+Alt+D` (configurable) shows or hides Dev Hub from anywhere and focuses search. If another app already owns the shortcut, Dev Hub says so at startup and in Settings. Closing the window keeps it in the tray; quit from the tray menu. Launching it again brings the existing window forward.
 - **Actions**: open in editor, open a terminal there (Windows Terminal, or PowerShell if it isn't installed), show the folder in Explorer, pin to top, hide.
 
 ## Keyboard
@@ -36,7 +36,7 @@ A small Tauri 2 desktop app that lists all your local projects with git status, 
 | `Shift+F` | Fetch all |
 | `P` | Pin |
 | `Ctrl+R` / `F5` | Rescan |
-| `Ctrl+Alt+Space` | Show/hide Dev Hub from anywhere (configurable) |
+| `Ctrl+Alt+D` | Show/hide Dev Hub from anywhere (configurable) |
 | `Ctrl+,` | Settings |
 
 ## Settings

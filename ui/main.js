@@ -718,6 +718,7 @@ function openSettings() {
   $('#close-to-tray').checked = draft.closeToTray;
   $('#hotkey').value = draft.hotkey;
   $('#gh-status').textContent = state.ghAvailable ? '' : 'GitHub CLI (gh) not found.';
+  showHotkeyHelp();
   $('#root-input').value = '';
   renderSettingsLists();
   checkEditor();
@@ -773,6 +774,14 @@ $('#editor-preset').addEventListener('change', (e) => {
 });
 $('#editor-custom').addEventListener('input', checkEditor);
 
+const HOTKEY_HELP = 'Shows or hides Dev Hub from anywhere. Backspace clears it.';
+async function showHotkeyHelp() {
+  const help = $('#hotkey-help');
+  const err = await invoke('hotkey_error').catch(() => null);
+  help.textContent = err || HOTKEY_HELP;
+  help.classList.toggle('error-text', !!err);
+}
+
 // Record a shortcut by pressing it.
 $('#hotkey').addEventListener('keydown', (e) => {
   if (e.key === 'Tab') return;
@@ -786,8 +795,9 @@ $('#hotkey').addEventListener('keydown', (e) => {
         : null;
   if (!key) return;
   const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
+  $('#hotkey-help').classList.remove('error-text');
   if (!mods.length && !/^F\d/.test(key)) { $('#hotkey-help').textContent = 'Use at least one of Ctrl, Alt, Shift or Win.'; return; }
-  $('#hotkey-help').textContent = 'Shows or hides Dev Hub from anywhere. Backspace clears it.';
+  $('#hotkey-help').textContent = HOTKEY_HELP;
   e.target.value = [...mods, key].join('+');
 });
 
@@ -831,6 +841,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
   render();
   if (!state.config.roots.length) openSettings();
   else scan();
+  const hotkeyErr = await invoke('hotkey_error').catch(() => null);
+  if (hotkeyErr) toast(hotkeyErr, true);
 })();
 
 /* ---------- demo data when running outside Tauri ---------- */
@@ -886,7 +898,7 @@ function demoInvoke(cmd, args) {
   const demo = demoInvoke.data ||= {
     config: { roots: ['C:\\Users\\dev\\projects'], editor: 'code', scanDepth: 3, scanTodos: true, hidden: [], pinned: ['C:\\Users\\dev\\projects\\tauri\\AeonDataStudio'],
       notes: { 'C:\\Users\\dev\\projects\\py\\ml-sandbox': 'Left off tuning the learning-rate schedule.\nNext: try cosine warmup.' },
-      recent: {}, hotkey: 'Ctrl+Alt+Space', closeToTray: true, autoRefresh: true, github: true },
+      recent: {}, hotkey: 'Ctrl+Alt+D', closeToTray: true, autoRefresh: true, github: true },
     projects: [
       { name: 'AeonDataStudio', path: 'C:\\Users\\dev\\projects\\tauri\\AeonDataStudio', kinds: ['rust', 'tauri'], modified: now, todoCount: 14,
         todos: [{ file: 'core/src/pipeline.rs', line: 118, kind: 'TODO', text: 'stream rows instead of collecting the whole batch' }, { file: 'src/app.rs', line: 42, kind: 'FIXME', text: 'dialog loses focus after export' }, { file: 'cli/src/main.rs', line: 9, kind: 'HACK', text: 'work around clap env parsing' }],
@@ -912,6 +924,7 @@ function demoInvoke(cmd, args) {
     case 'scan_project': return Promise.resolve(structuredClone(demo.projects.find((p) => p.path === args.path)));
     case 'git_graph': return new Promise((r) => setTimeout(() => r(demoGraph(now)), 150));
     case 'github_available': return Promise.resolve(true);
+    case 'hotkey_error': return Promise.resolve(null);
     case 'github_cached': return Promise.resolve({});
     case 'github_info': return Promise.resolve(Object.fromEntries(args.repos.map(({ path }) => [path, {
       fetchedAt: now, error: null,

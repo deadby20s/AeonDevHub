@@ -40,6 +40,8 @@ struct AppState {
     /// Project folders from the last full scan (what the watcher watches).
     paths: Mutex<Vec<PathBuf>>,
     watcher: Mutex<Option<watch::ProjectWatcher>>,
+    /// Why the global shortcut couldn't be registered (e.g. another app owns it).
+    hotkey_error: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -88,14 +90,25 @@ fn toggle_main(app: &AppHandle) {
     }
 }
 
+/// Registers the global shortcut and remembers any failure so the UI can show it.
 fn apply_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
     let gs = app.global_shortcut();
-    gs.unregister_all().map_err(|e| e.to_string())?;
+    let _ = gs.unregister_all();
     let h = hotkey.trim();
-    if h.is_empty() {
-        return Ok(());
-    }
-    gs.register(h).map_err(|e| format!("The shortcut \"{h}\" couldn't be registered ({e}). Pick another one in Settings."))
+    let result = if h.is_empty() {
+        Ok(())
+    } else {
+        gs.register(h).map_err(|e| {
+            format!("The shortcut {h} couldn't be registered, probably because another app already uses it ({e}). Pick a different one in Settings.")
+        })
+    };
+    *app.state::<AppState>().hotkey_error.lock().unwrap() = result.clone().err();
+    result
+}
+
+#[tauri::command]
+fn hotkey_error(state: State<AppState>) -> Option<String> {
+    state.hotkey_error.lock().unwrap().clone()
 }
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
@@ -171,7 +184,7 @@ fn save_config(app: AppHandle, state: State<AppState>, config: Config) -> Result
     if old.auto_refresh != config.auto_refresh {
         restart_watcher(&app);
     }
-    if old.hotkey != config.hotkey {
+    if old.hotkey != config.hotkey || state.hotkey_error.lock().unwrap().is_some() {
         apply_hotkey(&app, &config.hotkey).map_err(|e| format!("Settings saved, but: {e}"))?;
     }
     Ok(())
@@ -390,11 +403,11 @@ pub fn run() {
                 scanning: AtomicBool::new(false),
                 paths: Mutex::new(paths),
                 watcher: Mutex::new(None),
+                hotkey_error: Mutex::new(None),
             });
             build_tray(app)?;
-            if let Err(e) = apply_hotkey(app.handle(), &hotkey) {
-                eprintln!("{e}");
-            }
+            // A failure is kept in state and shown by the UI (hotkey_error).
+            let _ = apply_hotkey(app.handle(), &hotkey);
             restart_watcher(app.handle());
             Ok(())
         })
@@ -430,6 +443,7 @@ pub fn run() {
             github_available,
             github_cached,
             github_info,
+            hotkey_error,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aeon Dev Hub");

@@ -44,7 +44,7 @@ impl Default for Config {
             pinned: Vec::new(),
             notes: BTreeMap::new(),
             recent: BTreeMap::new(),
-            hotkey: "Ctrl+Alt+Space".into(),
+            hotkey: "Ctrl+Alt+D".into(),
             close_to_tray: true,
             auto_refresh: true,
             github: true,

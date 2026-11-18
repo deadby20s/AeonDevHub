@@ -42,3 +42,16 @@ cargo test -- --ignored --nocapture   # smoke-scan this machine's default folder
 ```
 
 Opening `ui/index.html` through any static server (for example `python -m http.server -d ui`) runs the UI with demo data.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion
+in this project by you, as defined in the Apache-2.0 license, shall be dual licensed as above,
+without any additional terms or conditions.

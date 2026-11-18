@@ -3,7 +3,7 @@ name = "aeondevhub"
 version = "0.1.0"
 description = "Personal dev hub: every project with git status, last commit, TODOs and one-click open in editor"
 edition = "2024"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "aeondevhub_lib"
